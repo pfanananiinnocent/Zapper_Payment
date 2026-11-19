@@ -587,3 +587,466 @@ The baseline tests demonstrate that the payment solution maintains transactional
 Provider-side rate-limit enforcement, maximum active outbound concurrency and concurrent submissions using the same AppPaymentId require separate validation.
 
 **Stage 3.4.5.3 Part A — Completed successfully.**
+
+### Stage 3.4.5.3B – Provider-Side Concurrency and Rate-Limit Instrumentation
+
+#### Objective
+
+Independently validate the effectiveness of the Payments API's outbound concurrency management, rate limiting and queue management by measuring actual incoming traffic at the Acme Pay simulator.
+
+#### Implementation
+
+Provider-side instrumentation was implemented using ASP.NET Core middleware and a thread-safe singleton metrics service.
+
+The instrumentation monitors Payment and Real-Time Transaction Query (RTTQ) requests through shared counters and a rolling one-second request arrival window.
+
+The implementation captures:
+
+- Total Payment and RTTQ requests.
+- Current and peak provider concurrency.
+- Current and peak rolling request arrival rates.
+- Concurrency and rate-limit threshold violations.
+- Completed and aborted requests.
+- HTTP response classifications.
+- Average and maximum provider processing durations.
+
+A monotonic Stopwatch clock is used for duration measurements and rolling-window calculations.
+
+The instrumentation observes traffic independently without enforcing the Payments API's outbound limits.
+
+#### Diagnostic Endpoints
+
+- GET /api/diagnostics/metrics
+- POST /api/diagnostics/metrics/reset
+
+Both diagnostic endpoints are restricted to the development environment. Metrics reset is prevented while tracked requests remain active.
+
+#### Configured Thresholds
+
+- Maximum outbound concurrency: 10.
+- Maximum request arrival rate: 20 requests per rolling second.
+- Configurable Payment and RTTQ processing delays.
+
+#### Validation Test 1 – Metrics Initialisation
+
+Result: Passed.
+
+The diagnostics endpoint returned HTTP 200. All counters were correctly initialised to zero, and the configured concurrency and rate-limit thresholds were loaded successfully.
+
+#### Validation Test 2 – Concurrent Baseline
+
+The Payments API received 100 concurrent payment submissions without an artificial provider delay.
+
+Provider-side results:
+
+| Metric | Observed result |
+|---|---:|
+| Total provider requests | 105 |
+| Payment requests | 100 |
+| RTTQ requests | 5 |
+| Completed requests | 105 |
+| Peak concurrent requests | 2 |
+| Peak rolling requests per second | 19 |
+| Rate-limit violations | 0 |
+| Concurrency violations | 0 |
+| HTTP 2xx responses | 100 |
+| HTTP 4xx responses | 5 |
+| HTTP 429 responses | 0 |
+| HTTP 5xx responses | 0 |
+| Aborted requests | 0 |
+| Average provider duration | 2.33 ms |
+| Maximum provider duration | 101.59 ms |
+
+The configured outbound thresholds were not exceeded.
+
+Five additional RTTQ requests were observed during the test window, likely originating from background reconciliation of previously unresolved payments.
+
+The test therefore provides preliminary mixed-traffic validation rather than a strictly isolated payment-only baseline. The aggregate metrics do not independently establish the request types associated with the five HTTP 4xx responses.
+
+#### Validation Test 3 – Controlled Provider Saturation
+
+Run ID: LOAD-20261119-234429-7b9c6bd1
+
+The simulator was configured with an artificial payment processing delay of 750 milliseconds.
+
+A total of 50 concurrent payment submissions were executed.
+
+Client-side results:
+
+| Metric | Observed result |
+|---|---:|
+| Total requests | 50 |
+| HTTP 200 responses | 50 |
+| Approved payments | 50 |
+| Unique payment IDs | 50 |
+| Unique transaction IDs | 50 |
+| Unexpected results | 0 |
+| Average latency | 7,725.30 ms |
+| P95 latency | 9,141 ms |
+| Maximum latency | 9,619 ms |
+| Total execution duration | 10.328 seconds |
+| Client throughput | 4.84 requests/second |
+
+Provider-side results:
+
+| Metric | Observed result |
+|---|---:|
+| Total requests | 50 |
+| Payment requests | 50 |
+| RTTQ requests | 0 |
+| Completed requests | 50 |
+| Peak concurrent requests | 10 |
+| Peak rolling requests per second | 14 |
+| Rate-limit violations | 0 |
+| Concurrency violations | 0 |
+| HTTP 2xx responses | 50 |
+| HTTP 429 responses | 0 |
+| HTTP 5xx responses | 0 |
+| Aborted requests | 0 |
+| Average provider duration | 772.56 ms |
+| Maximum provider duration | 1,221.42 ms |
+
+The provider reached the configured concurrency limit of 10 without exceeding it.
+
+All 50 payments were approved successfully, with unique payment and transaction identifiers and no unexpected client errors.
+
+#### Engineering Conclusion
+
+The observed results demonstrate that the outbound resilience controls enforce the configured concurrency and rate thresholds under the tested workloads.
+
+The controlled saturation test also demonstrates the trade-off between protecting downstream services and increasing end-to-end request latency.
+
+#### Design Limitations
+
+- Metrics are in-memory and specific to the running simulator instance.
+- Local validation does not establish distributed rate-limit compliance across multiple Payments API instances.
+- The rolling one-second measurement is a conservative interpretation of the provider's rate restriction.
+- End-to-end request latency includes multiple processing stages and cannot be attributed exclusively to outbound queue waiting.
+- Provider-side diagnostics are intended for assessment testing and are not a replacement for production distributed monitoring.
+
+#### Validation Status
+
+- Provider-side instrumentation: Passed.
+- Metrics initialisation and retrieval: Passed.
+- Metrics reset: Executed; independently verify reset before the negative-control test.
+- Baseline rate-limit compliance: Passed.
+- Controlled provider saturation: Passed.
+- Concurrent payment and RTTQ traffic: Preliminary validation.
+- Instrumentation negative-control testing: Pending.
+- Dedicated mixed-traffic saturation testing: Pending.
+- Concurrent idempotency testing: Next stage.
+
+#### Validation Test 4 – Instrumentation Negative Control
+
+Result: Passed.
+
+**Objective**
+
+Validate that the provider-side instrumentation independently detects concurrency and rate-limit violations when the Payments API's outbound resilience controls are bypassed.
+
+**Test Method**
+
+- Reset the Acme simulator metrics.
+- Configure an artificial payment processing delay of 750 milliseconds.
+- Submit 30 concurrent HTTP requests directly to the Acme Pay simulator.
+- Intentionally provide invalid authentication credentials to prevent successful simulated financial transactions.
+- Retrieve the provider-side diagnostic metrics.
+
+**Observed Results**
+
+| Metric | Observed result |
+|---|---:|
+| Total provider requests | 31 |
+| Payment requests | 30 |
+| RTTQ requests | 1 |
+| Completed requests | 31 |
+| Peak concurrent requests | 29 |
+| Expected maximum concurrency | 10 |
+| Peak rolling requests per second | 30 |
+| Configured requests per second limit | 20 |
+| Rate-limit violations | 10 |
+| Concurrency-limit violations | 20 |
+| Rate-limit compliant | False |
+| Concurrency-limit compliant | False |
+| HTTP 4xx responses | 31 |
+| HTTP 5xx responses | 0 |
+| Aborted requests | 0 |
+| Active requests after completion | 0 |
+| Average provider duration | 763.21 ms |
+| Maximum provider duration | 957.67 ms |
+
+All 30 direct payment requests returned HTTP 401 as expected.
+
+One additional RTTQ request was observed, potentially originating from background reconciliation. The test was therefore not completely isolated, but both configured threshold violations were successfully detected.
+
+**Engineering Conclusion**
+
+The negative-control test confirms that the provider instrumentation can independently detect violations rather than merely report successful compliance.
+
+The protected load tests remained within the configured thresholds, while direct unprotected traffic exceeded both thresholds.
+
+This establishes confidence in the effectiveness of the outbound resilience controls under the tested single-instance workloads.
+
+Distributed enforcement across multiple application instances remains a production architecture consideration.
+
+#### Validation Test 5 – Mixed Payment and RTTQ Traffic
+
+**Objective**
+
+Validate outbound resilience controls when the system receives both payment submissions and transaction reconciliation queries under concurrent workloads.
+
+**Test Configuration**
+
+- Maximum outbound concurrency: 10.
+- Maximum outbound request rate: 20 requests per second.
+- Simulated payment processing delay: 750 milliseconds.
+- Simulated RTTQ processing delay: 750 milliseconds.
+- Payment submissions: 50.
+- Requested payment concurrency: 50.
+- RTTQ diagnostic submissions: 50.
+- Requested RTTQ concurrency: 50.
+
+Payment load test run ID: `LOAD-20261119-235342-08ab0a14`.
+
+**Payment API Results**
+
+| Metric | Result |
+|---|---:|
+| Total payment submissions | 50 |
+| Completed results | 50 |
+| Approved payments | 50 |
+| Unique payment IDs | 50 |
+| Unique transaction IDs | 50 |
+| HTTP 200 responses | 50 |
+| Unexpected results | 0 |
+| Minimum latency | 1499 ms |
+| Average latency | 5780.20 ms |
+| P95 latency | 10442 ms |
+| Maximum latency | 10588 ms |
+| Total execution time | 12.362 seconds |
+| Payment API throughput | 4.04 requests/sec |
+
+**Cumulative Provider Metrics**
+
+| Metric | Result |
+|---|---:|
+| Total requests | 215 |
+| Payment requests | 150 |
+| RTTQ requests | 65 |
+| Completed requests | 215 |
+| Peak concurrent requests | 10 |
+| Peak rolling requests per second | 14 |
+| Rate-limit violations | 0 |
+| Concurrency-limit violations | 0 |
+| HTTP 429 responses | 0 |
+| HTTP 5xx responses | 0 |
+| Aborted requests | 0 |
+| Active requests after completion | 0 |
+| Average provider request duration | 764.31 ms |
+| Maximum provider request duration | 887.73 ms |
+| Rate-limit compliant | True |
+| Concurrency-limit compliant | True |
+
+**Test Observations and Limitations**
+
+All 50 dedicated RTTQ diagnostic requests returned HTTP 404 because the queried transaction was unavailable in the simulator. This is consistent with the simulator's in-memory transaction storage following a restart.
+
+These requests remain useful for outbound traffic validation, but do not demonstrate successful RTTQ retrieval under concurrent load.
+
+The provider metrics accumulated additional requests beyond the dedicated 100-request workload. Consequently, the results demonstrate cumulative compliance rather than an isolated mixed-traffic benchmark.
+
+**Engineering Conclusion**
+
+The tested workloads remained within both configured outbound thresholds. Payment submissions completed successfully, provider concurrency reached the configured maximum of 10, and the rolling request rate remained below 20 requests per second.
+
+The solution trades additional request latency for controlled provider utilisation and downstream protection.
+
+These results provide supporting evidence for shared outbound resilience controls in the tested single-instance deployment. Distributed rate limiting and concurrency coordination across horizontally scaled instances remain production architecture considerations.
+
+#### Stage 3.4.5.3B – Final Validation Summary
+
+The following scenarios were successfully exercised:
+
+- Provider-side diagnostic instrumentation.
+- Baseline concurrent payment load.
+- Slow-provider concurrency saturation.
+- Independent negative-control violation detection.
+- Payment and RTTQ traffic validation.
+- Provider request-rate monitoring.
+- Provider concurrency monitoring.
+- Request completion and latency monitoring.
+
+The instrumentation independently demonstrated threshold violations when bypassing the Payments API and compliant behaviour when using the protected application endpoints.
+
+Validation scope: local, single-instance deployment with cumulative mixed-traffic metrics. No production-scale performance guarantees are inferred from these results.
+
+#### Database Financial Integrity and Event Verification
+
+Database reconciliation was performed against the three independent concurrent duplicate-payment test runs.
+
+| Metric | 10 requests | 50 requests | 100 requests |
+|---|---:|---:|---:|
+| PaymentId | 499 | 509 | 518 |
+| Persisted payment records | 1 | 1 | 1 |
+| Unique application payment IDs | 1 | 1 | 1 |
+| Unique transaction IDs | 1 | 1 | 1 |
+| Unique order numbers | 1 | 1 | 1 |
+| Approved payments | 1 | 1 | 1 |
+| Requested minor units | 1500 | 1500 | 1500 |
+| Authorised minor units | 1500 | 1500 | 1500 |
+| Registration events | 1 | 1 | 1 |
+| Approval events | 1 | 1 | 1 |
+| Outbound payment request logs | 1 | 1 | 1 |
+| Validation result | PASSED | PASSED | PASSED |
+
+#### Consolidated Financial Results
+
+- Total client submissions: 160.
+- Actual persisted payments: 3.
+- Unique financial transaction identifiers: 3.
+- Actual outbound provider submissions: 3.
+- Duplicate outbound submissions prevented: 157.
+- Total requested minor units: 4500.
+- Total authorised minor units: 4500.
+- Total authorised value: ZAR 45.00.
+- Duplicate approval events: 0.
+- Financial integrity validation: PASSED.
+
+Assuming every unprotected submission would have been independently approved, the potential authorised value would have been ZAR 2400.00. The implemented idempotency protection reduced the observed financial submissions to three, preventing potential duplicate authorisations totalling ZAR 2355.00.
+
+#### Payment Event Integrity
+
+Each payment generated exactly one registration event and one approval event.
+
+All three payments transitioned from Pending to Approved without duplicate financial approval events.
+
+This preserves the integrity of event-based financial reporting and prevents repeated application requests from inflating approval counts or authorised totals.
+
+#### Outbound Request Log Verification
+
+SQL Server request logs confirmed exactly one successful Acme payment submission per independent test run.
+
+All three provider responses returned HTTP 200 with response code 00.
+
+The observed outbound request durations were 1664 ms, 1592 ms and 1560 ms.
+
+These results were consistent with the independent Acme provider instrumentation.
+
+#### Conflicting Payment Payload Verification
+
+PaymentId: 522
+
+AppPaymentId: APP-IDEMPOTENCY-CONFLICT-001
+
+The observed conflicting request returned HTTP 409 Conflict.
+
+Subsequent database verification confirmed:
+
+- Original requested amount: 2500 minor units.
+- Original authorised amount: 2500 minor units.
+- Final payment status: Approved.
+- Outbound financial submissions: 1.
+- Financial approval events: 1.
+
+The conflicting request did not modify the original financial transaction or initiate another provider payment submission.
+
+#### Engineering Conclusion
+
+Concurrent idempotency was successfully validated through API response identities, database uniqueness, payment lifecycle events, outbound request logs and independent provider instrumentation.
+
+All three duplicate load scenarios maintained financial consistency under the tested single-instance workload.
+
+No core payment orchestration changes were required following these tests.
+
+The results demonstrate effective duplicate financial submission protection for the tested scenarios, rather than a universal exactly-once guarantee across distributed systems.
+
+Remaining validation activities include confirming all conflicting payload variations and correcting the load-testing utility's classification of legitimate HTTP 202 Pending responses.
+
+#### Load-Testing Utility Regression Validation
+
+The enhanced concurrent payment load-testing utility was successfully validated using both Duplicate and Unique execution modes.
+
+##### Duplicate Mode Regression
+
+Run ID: LOAD-20261120-001708-3683d68d
+
+Test configuration:
+
+- Total requests: 100.
+- Requested concurrency: 100.
+- Simulated provider processing delay: 1500 milliseconds.
+- Payment amount: 1500 minor units.
+
+Observed results:
+
+| Metric | Result |
+|---|---:|
+| Completed responses | 100 |
+| HTTP 200 Approved | 88 |
+| HTTP 202 Pending | 12 |
+| Valid responses | 100 |
+| Invalid responses | 0 |
+| Unexpected responses | 0 |
+| Client errors | 0 |
+| Unique application payment IDs | 1 |
+| Unique payment IDs | 1 |
+| Unique transaction IDs | 1 |
+| Unique order numbers | 1 |
+| Provider payment submissions | 1 |
+| Provider successful responses | 1 |
+| Provider rate-limit violations | 0 |
+| Provider concurrency violations | 0 |
+| Identity validation | PASSED |
+| Overall API validation | PASSED |
+
+The enhanced script correctly recognised HTTP 202 Pending responses as legitimate intermediate outcomes during concurrent duplicate processing.
+
+All 100 responses referenced the same payment identity, transaction identity and order number.
+
+Independent provider instrumentation confirmed that exactly one financial payment request reached the Acme simulator.
+
+##### Unique Mode Regression
+
+Run ID: LOAD-20261120-001829-884aeec3
+
+| Metric | Result |
+|---|---:|
+| Total requests | 10 |
+| Requested concurrency | 10 |
+| Completed responses | 10 |
+| Approved responses | 10 |
+| HTTP 200 responses | 10 |
+| Valid responses | 10 |
+| Invalid responses | 0 |
+| Unexpected responses | 0 |
+| Client errors | 0 |
+| Unique payment IDs | 10 |
+| Unique transaction IDs | 10 |
+| Unique order numbers | 10 |
+| Average API latency | 1252.10 ms |
+| P95 API latency | 1352 ms |
+| Total test duration | 1.527 seconds |
+| API throughput | 6.55 requests per second |
+| Overall API validation | PASSED |
+
+The Unique mode regression confirmed that the enhanced response validation did not introduce an observed regression into independent payment processing.
+
+##### Consolidated Concurrent Idempotency Results
+
+Across four independent duplicate-mode load tests:
+
+- Total client submissions: 260.
+- Actual outbound provider payment submissions: 4.
+- Duplicate outbound payment submissions prevented: 256.
+- Reduction in financial submissions: 98.46%.
+- Observed duplicate provider submissions: 0.
+
+##### Engineering Conclusion
+
+The concurrent payment testing utility successfully validates response contracts, payment identity consistency and mode-specific acceptance criteria.
+
+The original Pending response classification issue was resolved without modifying the core payment orchestration implementation.
+
+The combination of database-level unique constraints, application-level idempotency, stable provider transaction identifiers, payment event auditing and independent provider instrumentation demonstrated effective duplicate financial submission protection under the tested single-instance workloads.
+
+Distributed failure scenarios and multi-instance deployment considerations remain separate architectural concerns requiring additional production safeguards.
