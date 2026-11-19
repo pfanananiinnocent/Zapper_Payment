@@ -218,3 +218,23 @@ For a future iteration, establish contract and concurrency tests earlier, make p
 ## 12. Reference
 
 Zapper Team Lead Software Engineer Technical Vetting Assignment, Tasks 1–4 and Appendix A (Acme Pay Payment Gateway API v2). This document is an implementation record and should be reconciled against the final source code and test results before submission.
+
+## 13. Real Time Transaction Query (RTTQ) Client
+
+The Acme client abstraction was extended to support Real Time Transaction Query using the original persisted TransactionID.
+
+The RTTQ implementation uses the existing typed HttpClient, configured merchant identifier and bearer authentication.
+
+A dedicated AcmeQueryResult contract separates HTTP transport outcomes from financial transaction outcomes. It preserves the HTTP status code, available provider response and Retry-After header.
+
+HTTP 404 is treated as an unknown provider transaction rather than a confirmed financial decline. HTTP 429 is identified separately so that subsequent reconciliation scheduling can respect provider throttling.
+
+Response downloading is included within the HTTP client's configured timeout, and sensitive provider response bodies are excluded from exception messages.
+
+A temporary development-only diagnostic endpoint was introduced to validate communication between the Zapper Payments API and Acme RTTQ before implementing database reconciliation.
+
+The timeout simulation demonstrates why a payment must be persisted before contacting an external gateway. A request can time out locally even though Acme has successfully authorised the original transaction.
+
+The original TransactionID is retained and queried rather than generating a new identifier or submitting another financial transaction.
+
+Automatic reconciliation, durable reconciliation scheduling, outbound rate limiting and lifecycle concurrency protection are addressed in subsequent implementation stages.

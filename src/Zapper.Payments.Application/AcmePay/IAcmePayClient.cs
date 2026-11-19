@@ -7,4 +7,8 @@ public interface IAcmePayClient
     Task<AcmePaymentResponse> SubmitPaymentAsync(
         AcmePaymentRequest request,
         CancellationToken cancellationToken = default);
+
+    Task<AcmeQueryResult> QueryTransactionAsync(
+        Guid transactionId,
+        CancellationToken cancellationToken = default);
 }
