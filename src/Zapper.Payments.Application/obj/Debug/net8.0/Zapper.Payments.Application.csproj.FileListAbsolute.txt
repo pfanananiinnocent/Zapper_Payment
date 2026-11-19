@@ -1,0 +1,15 @@
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\bin\Debug\net8.0\Zapper.Payments.Application.deps.json
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\bin\Debug\net8.0\Zapper.Payments.Application.dll
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\bin\Debug\net8.0\Zapper.Payments.Application.pdb
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\bin\Debug\net8.0\Zapper.Payments.Domain.dll
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\bin\Debug\net8.0\Zapper.Payments.Domain.pdb
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\obj\Debug\net8.0\Zapper.Payments.Application.csproj.AssemblyReference.cache
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\obj\Debug\net8.0\Zapper.Payments.Application.GeneratedMSBuildEditorConfig.editorconfig
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\obj\Debug\net8.0\Zapper.Payments.Application.AssemblyInfoInputs.cache
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\obj\Debug\net8.0\Zapper.Payments.Application.AssemblyInfo.cs
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\obj\Debug\net8.0\Zapper.Payments.Application.csproj.CoreCompileInputs.cache
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\obj\Debug\net8.0\Zapper.P.04B9D898.Up2Date
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\obj\Debug\net8.0\Zapper.Payments.Application.dll
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\obj\Debug\net8.0\refint\Zapper.Payments.Application.dll
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\obj\Debug\net8.0\Zapper.Payments.Application.pdb
+C:\Projects\Zapper.Payments\src\Zapper.Payments.Application\obj\Debug\net8.0\ref\Zapper.Payments.Application.dll

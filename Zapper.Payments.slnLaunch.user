@@ -1,0 +1,15 @@
+[
+  {
+    "Name": "New Profile",
+    "Projects": [
+      {
+        "Path": "src\\Zapper.Payments.Api\\Zapper.Payments.Api.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "src\\Zapper.AcmePay.Stub\\Zapper.AcmePay.Stub.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

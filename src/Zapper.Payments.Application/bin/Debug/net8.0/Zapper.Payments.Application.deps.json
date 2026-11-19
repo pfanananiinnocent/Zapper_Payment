@@ -1,0 +1,39 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v8.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v8.0": {
+      "Zapper.Payments.Application/1.0.0": {
+        "dependencies": {
+          "Zapper.Payments.Domain": "1.0.0"
+        },
+        "runtime": {
+          "Zapper.Payments.Application.dll": {}
+        }
+      },
+      "Zapper.Payments.Domain/1.0.0": {
+        "runtime": {
+          "Zapper.Payments.Domain.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Zapper.Payments.Application/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Zapper.Payments.Domain/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
