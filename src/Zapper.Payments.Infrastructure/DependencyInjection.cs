@@ -5,6 +5,7 @@ using Zapper.Payments.Infrastructure.AcmePay;
 using Zapper.Payments.Application.Payments;
 using Zapper.Payments.Infrastructure.Services;
 using Zapper.Payments.Application.Payments.Reconciliation;
+using Zapper.Payments.Infrastructure.BackgroundServices;
 
 namespace Zapper.Payments.Infrastructure;
 
@@ -28,6 +29,20 @@ public static class DependencyInjection
 
         services.AddScoped<IPaymentService, PaymentService>();
         services.AddScoped<IPaymentReconciliationService,PaymentReconciliationService>();
+
+        services.AddOptions<ReconciliationOptions>().Bind(configuration.GetSection(
+        ReconciliationOptions.SectionName))
+        .Validate(
+            options =>
+                options.PollIntervalSeconds > 0 &&
+                options.BatchSize > 0 &&
+                options.BatchSize <= 100 &&
+                options.RetryDelaySeconds > 0 &&
+                options.InitialDelaySeconds >= 0,
+            "Invalid reconciliation configuration.")
+        .ValidateOnStart();
+
+        services.AddHostedService<PaymentReconciliationWorker>();
 
         return services;
     }

@@ -260,3 +260,23 @@ A development-only manual reconciliation endpoint was introduced to validate tim
 No database transaction is held open during the external HTTP request.
 
 Automated reconciliation scheduling, stale Pending payment recovery, distributed outbound rate limiting and concurrency coordination with webhook processing remain subsequent implementation tasks.
+
+## 15. Automated Background Payment Reconciliation
+
+A hosted .NET BackgroundService automatically discovers payments requiring reconciliation and attempts to recover their original financial outcomes through Acme RTTQ.
+
+The worker reuses the existing payment reconciliation service, ensuring that manual and automatic reconciliation follow the same transaction validation, concurrency protection, state transition and persistence rules.
+
+Polling intervals, batch sizes, initial processing delays and retry intervals are configurable through application settings.
+
+Dependency injection scopes are created for individual reconciliation operations to isolate EF Core DbContext instances and prevent scoped dependencies from being retained by the singleton hosted service.
+
+Unresolved transactions are deferred until their next eligible retry time. Provider Retry-After instructions are respected by pausing further reconciliation requests from the worker.
+
+Structured logging provides operational visibility into payment discovery, successful recovery, unresolved outcomes, provider throttling and processing failures.
+
+Cancellation tokens and the hosted service lifecycle support graceful application shutdown.
+
+The initial implementation processes reconciliation operations sequentially using bounded batches. Retry scheduling is maintained in memory, while payment state and reconciliation request history remain durable in SQL Server.
+
+Durable retry scheduling, stale Pending payment recovery, distributed work claiming and shared outbound rate limiting remain production-hardening considerations.
