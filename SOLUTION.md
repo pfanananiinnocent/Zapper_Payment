@@ -400,3 +400,190 @@ SQL Server validation confirmed that the original transaction identifier was pre
 The functional regression tests passed for approved payments, declined payments, transaction querying, timeout handling, automatic reconciliation, database persistence and gateway diagnostics.
 
 The configured rate limits, concurrent request limits, local queue saturation and provider cooldown behaviour still require dedicated load and failure-injection testing in subsequent stages.
+
+### Stage 3.4.5.2 – HTTP Resilience and Safe Failure Classification
+
+The outbound resilience implementation was extended to distinguish requests rejected before dispatch from requests with uncertain provider outcomes.
+
+A dedicated AcmeRequestNotDispatchedException identifies local queue saturation and admission timeouts before an HTTP request reaches the payment provider.
+
+A NotDispatched payment status and corresponding lifecycle event were introduced. Payments in this state are not classified as financial declines and are excluded from automatic RTTQ reconciliation.
+
+The Payments API returns HTTP 503 for payments rejected before dispatch. Existing application payment identity and idempotency protections are preserved.
+
+Independent timeout budgets were introduced for outbound queue admission and provider execution. The initial configuration permits five seconds for queue admission and 35 seconds for provider communication.
+
+SocketsHttpHandler was configured with explicit connection establishment timeouts, pooled connection lifetimes, idle connection timeouts and connection limits.
+
+Automatic HTTP redirects and cookie handling were disabled for the Acme client.
+
+The local Acme simulator was extended with deterministic HTTP 429 and HTTP 500 fault scenarios.
+
+The HTTP 500 scenario intentionally processes and stores the financial transaction before returning an error, allowing recovery through RTTQ using the original TransactionID.
+
+The provider Retry-After header establishes a shared application-instance cooldown. Requests unable to obtain admission within the configured queue timeout are rejected locally without contacting Acme.
+
+No automatic retry of financial POST requests was introduced.
+
+The design deliberately prioritises financial correctness over automatic recovery of requests known never to have been dispatched.
+
+Remaining limitations include durable retry scheduling, stale Pending payment recovery, distributed rate limiting, explicit retry workflows for NotDispatched payments and finite response-body size enforcement.
+
+Implementation validation is pending execution of the dedicated fault-injection and regression tests.
+
+### Stage 3.4.5.2 – HTTP Resilience Validation and Test Evidence
+
+**Validation date:** 19 November 2026
+
+Dedicated fault-injection tests were executed using the local Acme Pay simulator, Swagger and SQL Server to validate the outbound resilience implementation.
+
+#### HTTP 500 Recovery
+
+- Application Payment ID: APP-HTTP500-001
+- Payment ID: 13
+- Amount: 9500 minor units (ZAR 95.00)
+- Provider HTTP response: 500
+- Initial API response: HTTP 202
+- Initial status: PendingReconciliation
+- Original request duration: 476 milliseconds
+- RTTQ response: HTTP 200
+- RTTQ duration: 28 milliseconds
+- Final payment status: Approved
+- Final Acme response code: 00
+- Authorised amount: 9500
+
+The simulator processed the financial transaction before returning an HTTP 500 error. The background reconciliation worker successfully recovered the original transaction using RTTQ without an additional recorded financial submission.
+
+#### Provider HTTP 429 Handling
+
+- Application Payment ID: APP-HTTP429-001
+- Payment ID: 14
+- Amount: 10500 minor units (ZAR 105.00)
+- Provider HTTP status: 429
+- API response: HTTP 202
+- Payment status: PendingReconciliation
+
+Subsequent RTTQ requests returned HTTP 404 because the simulated provider rejected the transaction before processing it.
+
+The payment remained unresolved under the conservative reconciliation policy.
+
+#### Retry-After Validation
+
+The RTTQ diagnostic endpoint successfully extracted the following provider response properties:
+
+- HTTP status: 429
+- IsSuccessful: false
+- IsRateLimited: true
+- RetryAfterSeconds: 10
+- Acme response code: E29
+
+#### Shared Provider Cooldown Validation
+
+A controlled test was executed with the simulator temporarily returning a Retry-After value of 120 seconds.
+
+Application Payment ID: APP-HTTP429-002
+
+- Payment ID: 17
+- Amount: 13500 minor units (ZAR 135.00)
+- Provider HTTP status: 429
+- Initial API response: HTTP 202
+- Payment status: PendingReconciliation
+- Original payment request duration: 231 milliseconds
+
+The background reconciliation worker attempted an RTTQ request during the active provider cooldown.
+
+The shared outbound limiter rejected the RTTQ request before dispatch after approximately 5246 milliseconds.
+
+This confirmed that payment submissions and background reconciliation requests share the same provider cooldown within the application instance.
+
+#### Local NotDispatched Validation
+
+- Application Payment ID: APP-NOT-DISPATCHED-002
+- Payment ID: 18
+- Amount: 14500 minor units (ZAR 145.00)
+- API response: HTTP 503
+- Final status: NotDispatched
+- Database status value: 8
+- Previous status: Pending (1)
+- Lifecycle event type: PaymentNotDispatched (8)
+- Authorised amount: NULL
+- Acme response code: NULL
+- Gateway HTTP status: NULL
+- IsSuccessful: false
+- Local admission timeout duration: 5174 milliseconds
+
+The payment request was rejected by the shared outbound limiter before being dispatched to Acme.
+
+SQL Server validation confirmed the correct payment status, lifecycle event and request diagnostics. No RTTQ requests were observed for the rejected payment.
+
+#### Cooldown Recovery
+
+- Application Payment ID: APP-COOLDOWN-RECOVERY-001
+- Payment ID: 16
+- Amount: 12500 minor units (ZAR 125.00)
+- Final payment status: Approved
+- Acme response code: 00
+- Authorised amount: 12500
+- Request duration: 74 milliseconds
+
+Normal payment processing resumed after the provider cooldown expired.
+
+#### Engineering Decisions
+
+- Financial POST requests are not automatically retried.
+- Uncertain financial outcomes are reconciled using the original TransactionID.
+- Requests rejected before dispatch are not classified as financial declines.
+- NotDispatched payments are excluded from automatic RTTQ reconciliation.
+- Provider cooldown is shared across outbound Acme operations within one application instance.
+- Queue admission and gateway execution have independent timeout budgets.
+
+#### Validation Summary
+
+All five primary functional resilience scenarios passed.
+
+Remaining verification includes repeated NotDispatched idempotency, concurrent throughput enforcement, maximum in-flight request limits, sustained queue saturation, restart recovery and distributed coordination.
+
+The provider cooldown test configuration must be restored to its normal value before subsequent testing.
+
+#### Final Database Idempotency Verification
+
+Following the repeated submission of APP-NOT-DISPATCHED-002 after the provider cooldown expired, SQL Server verification confirmed:
+
+- Payment status: NotDispatched (8)
+- Total outbound request log records: 1
+- Original payment identity preserved
+- No additional outbound request recorded
+- No unintended payment status transition
+
+The API returned the original HTTP 503 response and preserved the existing PaymentID, TransactionID and OrderNumber.
+
+This validates both API-level and database-level idempotency for locally rejected payment requests under the tested scenario.
+
+**Stage 3.4.5.2 validation status: Completed — all ten functional validation checks passed.**
+
+Concurrent load testing and multi-instance coordination remain separate validation activities.
+
+#### Per-Run Database Integrity Verification
+
+Additional SQL Server validation was completed for all four concurrent load-test runs.
+
+| Validation | Expected | Actual | Result |
+|---|---:|---:|---|
+| Total persisted payments | 180 | 180 | Passed |
+| Unique AppPaymentIds across individual runs | 180 | 180 | Passed |
+| Unique TransactionIds across individual runs | 180 | 180 | Passed |
+| Unique OrderNumbers across individual runs | 180 | 180 | Passed |
+| Approved payments | 180 | 180 | Passed |
+| Total requested amount | 270000 | 270000 | Passed |
+| Total authorised amount | 270000 | 270000 | Passed |
+| Financial discrepancy | 0 | 0 | Passed |
+
+All four concurrent test runs individually maintained identifier uniqueness and financial consistency.
+
+No duplicate identifiers were detected within any of the individual test runs. All submitted payments were successfully authorised and persisted.
+
+The baseline tests demonstrate that the payment solution maintains transactional and financial correctness under the tested concurrent workloads of up to 100 simultaneous client requests.
+
+Provider-side rate-limit enforcement, maximum active outbound concurrency and concurrent submissions using the same AppPaymentId require separate validation.
+
+**Stage 3.4.5.3 Part A — Completed successfully.**
