@@ -28,8 +28,7 @@ public class PaymentController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> SubmitPayment(
-        [FromBody] AcmePaymentEnvelope request)
+    public async Task<IActionResult> SubmitPayment( [FromBody] AcmePaymentEnvelope request)
     {
         var payment = request.PaymentRequest;
 
@@ -77,8 +76,21 @@ public class PaymentController : ControllerBase
                 "Payment details are invalid.");
         }
 
-        var retrievalReference =
-            payment.OrderNumber.Length > 12
+        // Simulate provider throttling before processing.
+        if (payment.Card.Token == "TEST_TOKEN_RATE_LIMIT")
+        {
+            Response.Headers["Retry-After"] = "10";
+
+            return CreateError(
+                429,
+                payment.TransactionID,
+                payment.OrderNumber,
+                "E29",
+                "Rate limit exceeded",
+                "Please try again later.");
+        }
+
+        var retrievalReference = payment.OrderNumber.Length > 12
                 ? payment.OrderNumber[..12]
                 : payment.OrderNumber;
 
@@ -146,6 +158,19 @@ public class PaymentController : ControllerBase
                 payment.TransactionID);
         }
 
+        // Simulate a provider error after the
+        // financial transaction has been processed.
+        if (payment.Card.Token == "TEST_TOKEN_SERVER_ERROR")
+        {
+            return CreateError(
+                500,
+                payment.TransactionID,
+                payment.OrderNumber,
+                "E50",
+                "Internal server error",
+                "Payment outcome could not be confirmed.");
+        }
+
         // 7. Simulate a lost or delayed payment response.
         // Never hold the lock while waiting.
         if (payment.Card.Token == "TEST_TOKEN_TIMEOUT")
@@ -160,12 +185,8 @@ public class PaymentController : ControllerBase
 
     // Real Time Transaction Query endpoint.
     [HttpGet("/apirttq/query/Merchant/{merchantId}")]
-    public IActionResult QueryTransaction(
-        string merchantId,
-        [FromQuery(Name = "TransactionID")]
-        string? transactionId,
-        [FromQuery(Name = "OrderNumber")]
-        string? orderNumber)
+    public IActionResult QueryTransaction( string merchantId, [FromQuery(Name = "TransactionID")] string? transactionId,
+        [FromQuery(Name = "OrderNumber")] string? orderNumber)
     {
         // 1. Authenticate the query.
         if (!IsAuthenticated())
@@ -187,6 +208,21 @@ public class PaymentController : ControllerBase
             {
                 Message = "TransactionID or OrderNumber is required."
             });
+        }
+
+        // Development-only fault injection for RTTQ.
+        if (_configuration.GetValue<bool>(
+                "FaultInjection:ThrottleRttq"))
+        {
+            Response.Headers["Retry-After"] = "10";
+
+            return CreateError(
+                429,
+                transactionId ?? string.Empty,
+                orderNumber ?? string.Empty,
+                "E29",
+                "Rate limit exceeded",
+                "Please try again later.");
         }
 
         lock (SyncRoot)
@@ -221,10 +257,7 @@ public class PaymentController : ControllerBase
         }
     }
 
-    private static AcmePaymentResponseEnvelope
-        BuildPaymentResponse(
-            AcmePaymentRequestBody payment,
-            string retrievalReference)
+    private static AcmePaymentResponseEnvelope BuildPaymentResponse( AcmePaymentRequestBody payment, string retrievalReference)
     {
         string responseCode;
         string description;

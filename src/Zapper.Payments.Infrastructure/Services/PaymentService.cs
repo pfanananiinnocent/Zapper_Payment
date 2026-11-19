@@ -13,6 +13,7 @@ using Zapper.Payments.Domain.Entities;
 using Zapper.Payments.Domain.Enums;
 using Zapper.Payments.Infrastructure.AcmePay;
 using Zapper.Payments.Infrastructure.Persistence;
+using Zapper.Payments.Infrastructure.AcmePay.Resilience;
 
 namespace Zapper.Payments.Infrastructure.Services;
 
@@ -23,11 +24,7 @@ public class PaymentService : IPaymentService
     private readonly AcmePayOptions _options;
     private readonly ILogger<PaymentService> _logger;
 
-    public PaymentService(
-        ZapperPaymentsDbContext db,
-        IAcmePayClient acmePayClient,
-        IOptions<AcmePayOptions> options,
-        ILogger<PaymentService> logger)
+    public PaymentService(ZapperPaymentsDbContext db, IAcmePayClient acmePayClient, IOptions<AcmePayOptions> options,ILogger<PaymentService> logger)
     {
         _db = db;
         _acmePayClient = acmePayClient;
@@ -35,9 +32,7 @@ public class PaymentService : IPaymentService
         _logger = logger;
     }
 
-    public async Task<PaymentResponseDto> CreatePaymentAsync(
-        CreatePaymentRequest request,
-        CancellationToken cancellationToken = default)
+    public async Task<PaymentResponseDto> CreatePaymentAsync(CreatePaymentRequest request,CancellationToken cancellationToken = default)
     {
         // 1. Check whether this payment already exists.
         var existingPayment = await FindPaymentAsync(
@@ -246,6 +241,27 @@ public class PaymentService : IPaymentService
 
             requestLog.IsSuccessful = true;
         }
+        catch (AcmeRequestNotDispatchedException ex)
+        {
+            payment.Status = PaymentStatus.NotDispatched;
+
+            payment.AcmeResponseCode = null;
+
+            payment.AcmeResponseDescription =
+                "Payment was not dispatched to Acme.";
+
+            requestLog.IsSuccessful = false;
+
+            requestLog.HttpStatusCode = null;
+
+            requestLog.ErrorMessage = ex.Message;
+
+            _logger.LogWarning(
+                "Payment {PaymentId}, transaction {TransactionId} " +
+                "was rejected before dispatch.",
+                payment.Id,
+                payment.TransactionId);
+        }
         catch (OperationCanceledException)
         {
             MarkForReconciliation(payment);
@@ -313,6 +329,9 @@ public class PaymentService : IPaymentService
 
                 PaymentStatus.Declined =>
                     PaymentEventType.PaymentDeclined,
+
+                PaymentStatus.NotDispatched =>
+                    PaymentEventType.PaymentNotDispatched,
 
                 _ => PaymentEventType.PaymentPending
             },

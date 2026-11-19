@@ -38,22 +38,43 @@ public static class DependencyInjection
 
         //Outbound HTTP resilience handler.
         services.AddTransient<AcmeResilienceHandler>();
-        services.AddHttpClient<IAcmePayClient,AcmePayClient>((serviceProvider, client) =>
+        services.AddHttpClient<IAcmePayClient, AcmePayClient>((serviceProvider, client) =>
+        {
+            var options = serviceProvider
+                .GetRequiredService<IOptions<AcmePayOptions>>()
+                .Value;
+
+            client.BaseAddress = new Uri(options.BaseUrl);
+
+            // Timeout budgets are managed by our handler.
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        })
+        .ConfigurePrimaryHttpMessageHandler(serviceProvider =>
+        {
+            var options = serviceProvider
+                .GetRequiredService<
+                    IOptions<AcmeResilienceOptions>>()
+                .Value;
+
+            return new SocketsHttpHandler
             {
-                var options = serviceProvider
-                    .GetRequiredService<
-                        IOptions<AcmePayOptions>>()
-                    .Value;
+                ConnectTimeout =
+                    TimeSpan.FromSeconds(5),
 
-                client.BaseAddress =
-                    new Uri(options.BaseUrl);
+                PooledConnectionLifetime =
+                    TimeSpan.FromMinutes(5),
 
-                client.Timeout =
-                    TimeSpan.FromSeconds(
-                        options.TimeoutSeconds);
-            })
-            .AddHttpMessageHandler<
-                AcmeResilienceHandler>();
+                PooledConnectionIdleTimeout =
+                    TimeSpan.FromSeconds(45),
+
+                MaxConnectionsPerServer =
+                    options.MaxConcurrentRequests,
+
+                AllowAutoRedirect = false,
+
+                UseCookies = false
+            };
+        }).SetHandlerLifetime(Timeout.InfiniteTimeSpan).AddHttpMessageHandler<AcmeResilienceHandler>();
 
         //payment service.
         services.AddScoped<IPaymentService,PaymentService>();

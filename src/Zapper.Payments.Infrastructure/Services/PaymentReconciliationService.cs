@@ -9,6 +9,7 @@ using Zapper.Payments.Application.Payments.Reconciliation;
 using Zapper.Payments.Domain.Entities;
 using Zapper.Payments.Domain.Enums;
 using Zapper.Payments.Infrastructure.Persistence;
+using Zapper.Payments.Infrastructure.AcmePay.Resilience;
 
 namespace Zapper.Payments.Infrastructure.Services;
 
@@ -170,6 +171,22 @@ public sealed class PaymentReconciliationService
             message = "Acme RTTQ request timed out.";
 
             requestLog.ErrorMessage = message;
+        }
+
+        catch (AcmeRequestNotDispatchedException ex)
+        {
+            requestLog.IsSuccessful = false;
+
+            requestLog.HttpStatusCode = null;
+
+            message =
+                "RTTQ deferred by the local outbound limiter.";
+
+            requestLog.ErrorMessage = ex.Message;
+
+            _logger.LogWarning(
+                "RTTQ was not dispatched for transaction {TransactionId}",
+                payment.TransactionId);
         }
         catch (HttpRequestException ex)
         {

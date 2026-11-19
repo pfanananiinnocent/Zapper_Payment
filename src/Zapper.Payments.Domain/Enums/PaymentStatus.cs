@@ -8,5 +8,6 @@ public enum PaymentStatus
     PendingReconciliation = 4,
     Reversed = 5,
     PartiallyRefunded = 6,
-    Refunded = 7
+    Refunded = 7,
+    NotDispatched = 8
 }

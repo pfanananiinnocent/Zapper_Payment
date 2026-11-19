@@ -2,6 +2,7 @@
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Zapper.Payments.Infrastructure.AcmePay;
 
 namespace Zapper.Payments.Infrastructure.AcmePay.Resilience;
 
@@ -12,13 +13,14 @@ public sealed class AcmeResilienceHandler
 
     private readonly AcmeResilienceOptions _options;
 
-    private readonly ILogger<AcmeResilienceHandler>
-        _logger;
+    private readonly ILogger<AcmeResilienceHandler>  _logger;
+    private readonly AcmePayOptions _gatewayOptions;
 
-    public AcmeResilienceHandler(AcmeRequestLimiter limiter,IOptions<AcmeResilienceOptions> options, ILogger<AcmeResilienceHandler> logger)
+    public AcmeResilienceHandler( AcmeRequestLimiter limiter, IOptions<AcmeResilienceOptions> options, IOptions<AcmePayOptions> gatewayOptions, ILogger<AcmeResilienceHandler> logger)
     {
         _limiter = limiter;
         _options = options.Value;
+        _gatewayOptions = gatewayOptions.Value;
         _logger = logger;
     }
 
@@ -106,9 +108,11 @@ public sealed class AcmeResilienceHandler
                 "Method: {Method}",
                 request.Method.Method);
 
-            var response = await base.SendAsync(
-                request,
-                cancellationToken);
+            using var gatewayTimeout = CancellationTokenSource.CreateLinkedTokenSource( cancellationToken);
+
+            gatewayTimeout.CancelAfter( TimeSpan.FromSeconds( _gatewayOptions.TimeoutSeconds));
+
+            var response = await base.SendAsync( request, gatewayTimeout.Token);
 
             try
             {
@@ -133,8 +137,7 @@ public sealed class AcmeResilienceHandler
                 // before releasing the concurrency permit.
                 if (response.Content is not null)
                 {
-                    await response.Content.ReadAsByteArrayAsync(
-                        cancellationToken);
+                    await response.Content.ReadAsByteArrayAsync( gatewayTimeout.Token);
                 }
 
                 // No automatic resubmission or retry.
@@ -149,12 +152,9 @@ public sealed class AcmeResilienceHandler
         }
     }
 
-    private static HttpRequestException
-        CreateLocalThrottleException(string message)
+    private static AcmeRequestNotDispatchedException CreateLocalThrottleException(string message)
     {
-        // Do not assign an HTTP status code because
-        // no response was received from Acme.
-        return new HttpRequestException(message);
+        return new AcmeRequestNotDispatchedException(message);
     }
 
     private static TimeSpan? GetRetryAfter(HttpResponseMessage response)

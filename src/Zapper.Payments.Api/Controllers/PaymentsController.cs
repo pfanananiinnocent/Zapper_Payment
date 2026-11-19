@@ -27,11 +27,20 @@ public class PaymentsController : ControllerBase
     [ProducesResponseType( typeof(PaymentResponseDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(PaymentResponseDto),
+    StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> CreatePayment([FromBody] CreatePaymentRequest request, CancellationToken cancellationToken)
     {
         try
         {
             var result = await _paymentService.CreatePaymentAsync( request, cancellationToken);
+
+            if (result.Status == "NotDispatched")
+            {
+                return StatusCode(
+                    StatusCodes.Status503ServiceUnavailable,
+                    result);
+            }
 
             if (result.Status is
                 "Pending" or "PendingReconciliation")

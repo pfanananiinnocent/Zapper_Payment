@@ -8,5 +8,6 @@ public enum PaymentEventType
     PaymentPending = 4,
     PaymentReversed = 5,
     PaymentRefunded = 6,
-    ReconciliationUpdated = 7
+    ReconciliationUpdated = 7,
+    PaymentNotDispatched = 8
 }
