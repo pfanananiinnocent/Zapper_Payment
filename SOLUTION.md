@@ -280,3 +280,123 @@ Cancellation tokens and the hosted service lifecycle support graceful applicatio
 The initial implementation processes reconciliation operations sequentially using bounded batches. Retry scheduling is maintained in memory, while payment state and reconciliation request history remain durable in SQL Server.
 
 Durable retry scheduling, stale Pending payment recovery, distributed work claiming and shared outbound rate limiting remain production-hardening considerations.
+
+### Stage 3.4.4 – Automated Reconciliation Validation
+
+Automatic reconciliation was validated against the local Acme Pay simulator using controlled payment timeout and processing scenarios.
+
+#### Timeout Recovery
+
+- Application Payment ID: APP-AUTO-RECON-001
+- Payment ID: 8
+- Transaction ID: c9a5fb80-4898-4b10-aa66-bc2054cfc5ea
+- Payment amount: 45000 minor units (ZAR 450.00)
+- Original HTTP request duration: 35,267 milliseconds
+- Automatic RTTQ request duration: 30 milliseconds
+- Reconciliation completed approximately 11 seconds after the original timeout.
+- Final payment status: Approved
+- Final Acme response code: 00
+
+Database validation confirmed:
+
+- One original payment record.
+- Three payment lifecycle events.
+- One original payment submission request.
+- One successful RTTQ request.
+- The original TransactionID was preserved.
+- No additional financial payment submission was recorded.
+
+#### Unresolved Processing Scenario
+
+A second payment, APP-AUTO-PROCESSING-001, was submitted using the simulator's processing token.
+
+The application correctly returned HTTP 202 and persisted the payment as PendingReconciliation.
+
+The background worker automatically queried Acme, received response code 91 and retained the unresolved payment status.
+
+This validates that transport-level HTTP success is not incorrectly interpreted as financial approval.
+
+#### Implementation Limitations
+
+The current worker uses sequential processing with bounded batches and in-memory retry scheduling. Distributed work claiming, durable retry scheduling and gateway-wide rate limiting remain subsequent production-hardening tasks.
+
+### Stage 3.4.5.1 – Shared Outbound Rate Limiting and Concurrency Control
+
+A dedicated outbound resilience layer was introduced using a custom DelegatingHandler integrated with the existing typed Acme HTTP client.
+
+Microsoft's System.Threading.RateLimiting library is used to provide request pacing and bounded concurrency.
+
+A singleton AcmeRequestLimiter is shared across payment submission, transaction queries and background reconciliation requests within an application instance.
+
+The initial configuration targets 18 requests per second, below Acme's documented maximum of 20 requests per second, with a maximum of 10 concurrent outbound operations.
+
+A single-token bucket provides paced request admission rather than allowing large request bursts. A separate concurrency limiter restricts simultaneous HTTP operations and provides a bounded waiting queue.
+
+Queue waiting is cancellation-aware and subject to a configurable five-second timeout.
+
+Provider HTTP 429 responses establish a shared cooldown using the Retry-After response header or a configured fallback delay.
+
+Financial payment submissions are not automatically retried by the HTTP handler. Existing payment reconciliation continues to use the original persisted TransactionID.
+
+The resilience handler buffers the provider response before releasing its concurrency permit.
+
+Existing payment submission, transaction querying and reconciliation business logic remain unchanged.
+
+Configuration values are externally configurable and validated during application startup.
+
+The current implementation provides application-instance-level rate limiting. Distributed gateway-wide rate limiting, explicit handling of requests rejected before dispatch, separate gateway timeout budgeting and concurrent load validation remain subsequent implementation tasks.
+
+### Stage 3.4.5.1 – Functional Regression Validation
+
+Following the introduction of the shared outbound resilience handler, regression testing was performed against the local Acme Pay simulator to ensure that existing payment processing and reconciliation functionality remained operational.
+
+#### Approved Payment Scenario
+
+- Application Payment ID: APP-RESILIENCE-001
+- Payment ID: 10
+- Amount: 6500 minor units (ZAR 65.00)
+- HTTP status: 200
+- Acme response code: 00
+- Final payment status: Approved
+- Authorised amount: 6500
+- Recorded request duration: 77 milliseconds
+
+#### Declined Payment Scenario
+
+- Application Payment ID: APP-RESILIENCE-002
+- Payment ID: 11
+- Amount: 7500 minor units (ZAR 75.00)
+- HTTP status: 200
+- Acme response code: 05
+- Final payment status: Declined
+- Authorised amount: 0
+- Recorded request duration: 21 milliseconds
+
+The application continued to distinguish successful HTTP communication from successful financial authorisation.
+
+#### RTTQ Regression
+
+The diagnostic transaction query endpoint successfully retrieved the approved transaction using its original TransactionID.
+
+The provider returned HTTP 200 with response code 00 and the expected authorised amount.
+
+#### Automatic Timeout Recovery
+
+- Application Payment ID: APP-RESILIENCE-TIMEOUT-001
+- Payment ID: 12
+- TransactionID: e9fa647d-13aa-4249-891b-6bf02c2a7076
+- Amount: 8500 minor units (ZAR 85.00)
+- Initial API response: HTTP 202
+- Initial payment status: PendingReconciliation
+- Original request duration: 35,269 milliseconds
+- RTTQ request duration: 12 milliseconds
+- Final payment status: Approved
+- Final Acme response code: 00
+
+SQL Server validation confirmed that the original transaction identifier was preserved and that the payment was recovered through RTTQ without an additional recorded financial submission.
+
+#### Validation Summary
+
+The functional regression tests passed for approved payments, declined payments, transaction querying, timeout handling, automatic reconciliation, database persistence and gateway diagnostics.
+
+The configured rate limits, concurrent request limits, local queue saturation and provider cooldown behaviour still require dedicated load and failure-injection testing in subsequent stages.
