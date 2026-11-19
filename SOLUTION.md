@@ -238,3 +238,25 @@ The timeout simulation demonstrates why a payment must be persisted before conta
 The original TransactionID is retained and queried rather than generating a new identifier or submitting another financial transaction.
 
 Automatic reconciliation, durable reconciliation scheduling, outbound rate limiting and lifecycle concurrency protection are addressed in subsequent implementation stages.
+
+### 14. Payment Reconciliation Service
+
+A dedicated payment reconciliation service resolves uncertain payment outcomes using the original persisted TransactionID.
+
+Payments marked as PendingReconciliation are queried using Acme's Real Time Transaction Query endpoint without resubmitting the original financial transaction.
+
+The reconciliation service validates the returned transaction identifier and order number before applying any financial state transition.
+
+Confirmed approvals update the authorised amount, provider references, response code and payment status. Confirmed acquirer declines are recorded as declined payments. Unknown transactions, processing outcomes, communication failures and throttled requests remain unresolved.
+
+A short SQL Server transaction uses update locks to coordinate concurrent reconciliation operations. The current payment state is rechecked before applying the provider outcome, preventing repeated reconciliation requests from generating duplicate financial lifecycle events.
+
+Payment state changes, lifecycle events and reconciliation request diagnostics are persisted atomically.
+
+Provider transaction timestamps are converted from South African Standard Time to UTC. Where the provider timestamp is unavailable or malformed, the observation time is used as a fallback.
+
+A development-only manual reconciliation endpoint was introduced to validate timeout recovery, repeated reconciliation, unknown transactions and unresolved processing outcomes.
+
+No database transaction is held open during the external HTTP request.
+
+Automated reconciliation scheduling, stale Pending payment recovery, distributed outbound rate limiting and concurrency coordination with webhook processing remain subsequent implementation tasks.

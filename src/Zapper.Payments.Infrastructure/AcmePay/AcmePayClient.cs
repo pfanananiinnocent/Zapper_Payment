@@ -138,15 +138,19 @@ public class AcmePayClient : IAcmePayClient
     }
 
     private static async Task<AcmePaymentResponse?>
-        TryReadErrorResponseAsync(
-            HttpResponseMessage response,
-            CancellationToken cancellationToken)
+    TryReadErrorResponseAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
     {
         try
         {
-            return await response.Content
+            var result = await response.Content
                 .ReadFromJsonAsync<AcmePaymentResponse>(
                     cancellationToken: cancellationToken);
+
+            return result?.PaymentResponse is null
+                ? null
+                : result;
         }
         catch (JsonException)
         {
