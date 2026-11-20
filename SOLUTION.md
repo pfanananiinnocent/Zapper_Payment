@@ -1159,3 +1159,60 @@ Notifications received before the original payment outcome is resolved rely on A
 Webhook deliveries were simulated using signed PowerShell requests. No external payment provider or AWS deployment was required.
 
 No additional database tables or migrations were necessary.
+
+## Stage 5 — Financial Reporting and Regression Testing
+
+### Daily Financial Summary
+
+Implemented the daily financial summary using SQL Server and the existing PaymentEvents ledger.
+
+Location: `database/Reporting/DailyPaymentSummary.sql`
+
+The report provides:
+
+- Reporting date.
+- Sub-merchant identifier and trading name.
+- Currency code.
+- Approved payment count and total.
+- Declined payment count and total.
+- Reversal count and total.
+- Refund count and total.
+- Net payment total.
+
+Financial amounts are represented in minor currency units.
+
+The report uses South African Standard Time for business dates while retaining UTC timestamps in the database.
+
+Financial reporting is based on historical payment events rather than the current payment status, ensuring that subsequent reversals and refunds do not remove the original approval from historical reporting.
+
+### Financial Verification
+
+The controlled Stage 4.4 test transactions produced the following verified results:
+
+| Metric | Result |
+|---|---:|
+| Approved payments | 4 |
+| Approved amount | R650.00 |
+| Reversal count | 1 |
+| Reversal amount | R100.00 |
+| Refund count | 3 |
+| Refund amount | R500.00 |
+| Net payment amount | R50.00 |
+
+### Automated Regression Testing
+
+Executed the entire solution test suite using `dotnet test`.
+
+- Total tests: 43
+- Passed: 43
+- Failed: 0
+- Skipped: 0
+- Build: Successful
+
+### Design Decisions
+
+A standalone SQL report was selected to meet the assessment requirements without introducing unnecessary reporting infrastructure.
+
+The net payment amount represents approvals less reversals and refunds. It does not represent actual merchant settlement after processing fees.
+
+AWS deployment is outside the assessment's required implementation scope. The solution will provide a local containerised environment and document the proposed AWS production deployment approach.
