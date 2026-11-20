@@ -1338,3 +1338,83 @@ No AWS resources have been provisioned as part of this assignment.
 The proposed AWS architecture, distributed rate limiting, distributed reconciliation coordination and production monitoring are future deployment considerations rather than features claimed to have been implemented or tested in AWS.
 
 This approach satisfies the assignment requirements without introducing unnecessary infrastructure complexity.
+
+### Final Regression Testing
+
+Following containerisation and authentication configuration corrections, a complete solution build and automated regression test run were performed on 20 November 2026.
+
+Commands executed:
+
+- `dotnet build`
+- `dotnet test`
+
+| Metric | Result |
+|---|---|
+| Solution build | Successful |
+| Total automated tests | 43 |
+| Passed | 43 |
+| Failed | 0 |
+| Skipped | 0 |
+| Test pass rate | 100% |
+| Test execution duration | 19 seconds |
+
+All seven solution projects compiled successfully. Both the unit test and integration test suites completed without failures.
+
+The final regression results confirmed that the existing automated tests continued to pass following the containerisation changes.
+
+
+## AI-Assisted Development Workflow
+
+ChatGPT was used as a collaborative engineering assistant
+throughout the assessment.
+
+I provided the original assignment specification, Acme Pay
+API documentation, existing source code, configuration files,
+runtime errors, API responses and database verification results
+to establish the necessary context.
+
+I divided the assignment into smaller implementation stages
+covering architecture, persistence, provider integration,
+resilience, reconciliation, notifications, reporting, testing
+and containerisation.
+
+I delegated implementation proposals, code generation,
+troubleshooting assistance, test scenario design and
+documentation to AI.
+
+I retained responsibility for technical decisions, applying
+the implementation, executing the application, inspecting
+database records, reviewing runtime behaviour and managing
+source control.
+
+AI-generated work was reviewed iteratively rather than
+accepted without verification.
+
+For example:
+
+- I verified that concurrent duplicate submissions resulted
+  in one persisted payment and one outbound financial request.
+- I validated that provider timeouts triggered reconciliation
+  instead of unsafe payment resubmission.
+- I distinguished successful HTTP responses from actual
+  financial approvals.
+- I verified duplicate and out-of-order notification handling.
+- I investigated the Docker authentication failure and
+  corrected the configuration section mismatch.
+- I deliberately restricted the implementation to the
+  assessment requirements rather than introducing unnecessary
+  production infrastructure.
+
+The final solution successfully compiled and all 43 automated
+tests passed.
+
+Manual API testing, database inspection and concurrency testing
+provided additional validation beyond the automated test suite.
+
+If approaching the assignment again, I would introduce more
+automated provider contract tests earlier, establish payment
+state transition tests before implementation and automate
+additional end-to-end notification scenarios.
+
+Representative reconstructed prompts and implementation
+artifacts are available in the ai/ directory.
