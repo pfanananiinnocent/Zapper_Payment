@@ -1,0 +1,95 @@
+
+services:
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: "${SQL_SA_PASSWORD:?Set SQL_SA_PASSWORD in .env}"
+
+    ports:
+      - "127.0.0.1:14333:1433"
+
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |
+          /opt/mssql-tools18/bin/sqlcmd \
+            -S localhost \
+            -U sa \
+            -P "$$MSSQL_SA_PASSWORD" \
+            -C \
+            -Q "SELECT 1" \
+            -b || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  acme-stub:
+    image: zapper-acme-stub:local
+
+    build:
+      context: .
+      dockerfile: src/Zapper.AcmePay.Stub/Dockerfile
+
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: 8080
+      TZ: Africa/Johannesburg
+
+      AcmePay__ApiKey: "${ACME_API_KEY}"
+      AcmePay__MerchantId: "${ACME_MERCHANT_ID}"
+
+    ports:
+      - "127.0.0.1:8081:8080"
+
+  payments-api:
+    image: zapper-payments-api:local
+
+    build:
+      context: .
+      dockerfile: src/Zapper.Payments.Api/Dockerfile
+
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      acme-stub:
+        condition: service_started
+
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: 8080
+
+      TZ: Africa/Johannesburg
+      EnableHttpsRedirection: "false"
+
+      Logging__LogLevel__Microsoft.EntityFrameworkCore.Database.Command: "Warning"
+
+      ConnectionStrings__ZapperPayments: "Server=sqlserver,1433;Database=ZapperPaymentsDb;User Id=sa;Password=${SQL_SA_PASSWORD};TrustServerCertificate=True;MultipleActiveResultSets=True"
+
+      AcmePay__BaseUrl: "http://acme-stub:8080/"
+      AcmePay__ApiKey: "${ACME_API_KEY}"
+      AcmePay__MerchantId: "${ACME_MERCHANT_ID}"
+      AcmePay__TimeoutSeconds: "35"
+
+      AcmePay__Notifications__BasicAuthentication__Username: "${ACME_ADVICE_USERNAME}"
+      AcmePay__Notifications__BasicAuthentication__Password: "${ACME_ADVICE_PASSWORD}"
+
+      ACME_ADVICE_USERNAME: "${ACME_ADVICE_USERNAME}"
+      ACME_ADVICE_PASSWORD: "${ACME_ADVICE_PASSWORD}"
+      ACME_WEBHOOK_SECRET: "${ACME_WEBHOOK_SECRET}"
+
+      Reconciliation__Enabled: "true"
+
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    stop_grace_period: 45s
+
+volumes:
+  sqlserver-data:

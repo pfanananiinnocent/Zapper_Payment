@@ -1216,3 +1216,21 @@ A standalone SQL report was selected to meet the assessment requirements without
 The net payment amount represents approvals less reversals and refunds. It does not represent actual merchant settlement after processing fees.
 
 AWS deployment is outside the assessment's required implementation scope. The solution will provide a local containerised environment and document the proposed AWS production deployment approach.
+
+### Containerised Authentication Verification
+
+Payment advice Basic Authentication was successfully validated in the Docker environment using environment-based credentials.
+
+During verification, a configuration path mismatch was identified between the authentication options and Docker environment variables.
+
+The issue was resolved by aligning the Docker configuration with the existing `AcmePay:Notifications:BasicAuthentication` configuration section. No changes to the authentication handler were required.
+
+| Scenario | Expected HTTP Status | Actual HTTP Status | Result |
+|---|---|---|---|
+| Valid credentials | 200 | 200 | PASS |
+| Missing credentials | 401 | 401 | PASS |
+| Invalid credentials | 401 | 401 | PASS |
+
+The containerised environment successfully demonstrated payment processing, persistent database storage, idempotency across container recreation and notification authentication.
+
+Stage 6 – Containerisation and Local Deployment: Completed.
