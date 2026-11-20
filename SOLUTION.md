@@ -1234,3 +1234,107 @@ The issue was resolved by aligning the Docker configuration with the existing `A
 The containerised environment successfully demonstrated payment processing, persistent database storage, idempotency across container recreation and notification authentication.
 
 Stage 6 – Containerisation and Local Deployment: Completed.
+
+## Stage 7 – AWS Readiness and Production Operability
+
+### 7.1 Production Deployment Approach
+
+The solution has been containerised using Docker and Docker Compose. The local environment consists of the Payments API, Acme Pay simulator and SQL Server.
+
+For production, I would deploy the Payments API to Amazon ECS using AWS Fargate rather than managing dedicated EC2 instances. This would reduce infrastructure maintenance and allow the team to focus on application reliability and payment processing.
+
+The Docker image would be built through a CI/CD pipeline and published to Amazon Elastic Container Registry (ECR). ECS would deploy the versioned image behind an Application Load Balancer.
+
+HTTPS would be terminated at the load balancer using AWS Certificate Manager. Application containers would run in private subnets, with controlled outbound connectivity to the Acme Pay gateway.
+
+Amazon RDS for SQL Server would provide persistent database storage, automated backups and Multi-AZ availability where required.
+
+The local Acme simulator would not be deployed to production. The Payments API would communicate with the actual Acme Pay gateway through environment-specific configuration.
+
+Database migrations would be executed as a controlled deployment step rather than independently by every application replica.
+
+### 7.2 Configuration and Secrets Management
+
+The application uses environment-based configuration to separate application code from deployment-specific settings.
+
+In production, I would use AWS Secrets Manager to manage:
+
+- SQL Server credentials.
+- Acme Pay API credentials.
+- Payment advice Basic Authentication credentials.
+- Transaction status webhook signing secrets.
+
+Non-sensitive configuration, including gateway URLs, timeout settings and reconciliation intervals, could be managed through environment variables or AWS Systems Manager Parameter Store.
+
+IAM roles would provide least-privilege access to the required AWS resources. Production credentials would not be stored in source control, Docker images or application configuration files.
+
+Secret rotation would be coordinated with the payment provider and application deployment process.
+
+### 7.3 Scalability and Concurrency
+
+The Payments API is designed to support horizontal scaling because payment state is persisted in SQL Server rather than application memory.
+
+Amazon ECS Service Auto Scaling could adjust the number of running tasks based on CPU utilisation, memory utilisation and request volume.
+
+The existing implementation includes database-level uniqueness constraints, persistent payment identifiers, notification deduplication and outbound request throttling.
+
+An important production consideration is that the current Acme rate limiter operates within an individual application instance. Scaling multiple instances without coordination could exceed Acme's account-level limit of 20 requests per second.
+
+Before enabling horizontal scaling, I would introduce a distributed rate limiter, potentially using Amazon ElastiCache for Redis, to enforce a shared outbound request budget across all application instances.
+
+Similarly, the reconciliation worker would require distributed coordination or database-based work claiming to prevent multiple replicas from unnecessarily processing the same outstanding transaction.
+
+I would retain the modular monolith architecture initially. Introducing separate microservices would only be justified by demonstrated operational or scaling requirements.
+
+### 7.4 Graceful Shutdown and Recovery
+
+Payment processing must remain reliable during deployments, container termination and infrastructure failures.
+
+I would configure ECS task termination timeouts and Application Load Balancer connection draining to provide sufficient time for in-flight payment requests to complete.
+
+The ASP.NET Core host shutdown timeout, outbound HTTP timeout and ECS termination timeout would be aligned and tested together.
+
+Background reconciliation would observe cancellation requests and stop accepting new work during shutdown.
+
+If a payment request had already reached Acme but its outcome remained uncertain, the existing transaction identifier would be retained. The service would recover the payment outcome through the Real-Time Transaction Query mechanism rather than submitting another payment with a new identifier.
+
+The production recovery process would also identify stale pending payments interrupted before their final state was persisted.
+
+Database transactions and idempotency mechanisms would reduce the risk of duplicate financial records during retries and recovery.
+
+### 7.5 Monitoring, Logging and Diagnostics
+
+I would centralise structured application logs in Amazon CloudWatch Logs.
+
+Relevant correlation fields would include AppPaymentId, TransactionId, provider response code, request type, HTTP status code and request duration.
+
+Existing payment events and outbound request audit records provide additional information for investigating payment lifecycle changes and provider interactions.
+
+Operational monitoring would include:
+
+- Payment approval and decline rates.
+- Outbound Acme request latency.
+- HTTP 429 and 5xx response rates.
+- Request timeout frequency.
+- Pending reconciliation count and age.
+- Notification authentication failures.
+- Duplicate notification counts.
+- Outbound queue saturation.
+- Database connectivity and performance.
+- ECS task health, CPU and memory utilisation.
+
+CloudWatch alarms and operational dashboards would be configured to identify service degradation, excessive unresolved payments and integration failures.
+
+Sensitive information, including API credentials, authentication headers and stored card tokens, would be excluded from operational logs.
+
+The local health endpoint provides a basic application availability signal. For production, I would introduce separate liveness and readiness checks to distinguish application availability from critical dependency failures.
+
+### 7.6 Scope and Production Considerations
+
+The assignment requires a locally runnable, containerised solution and a description of the production deployment approach.
+
+No AWS resources have been provisioned as part of this assignment.
+
+The proposed AWS architecture, distributed rate limiting, distributed reconciliation coordination and production monitoring are future deployment considerations rather than features claimed to have been implemented or tested in AWS.
+
+This approach satisfies the assignment requirements without introducing unnecessary infrastructure complexity.
