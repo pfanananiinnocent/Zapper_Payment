@@ -1050,3 +1050,33 @@ The original Pending response classification issue was resolved without modifyin
 The combination of database-level unique constraints, application-level idempotency, stable provider transaction identifiers, payment event auditing and independent provider instrumentation demonstrated effective duplicate financial submission protection under the tested single-instance workloads.
 
 Distributed failure scenarios and multi-instance deployment considerations remain separate architectural concerns requiring additional production safeguards.
+
+### Stage 4.1 — Acme Payment Advice Contracts and Validation
+
+Implemented the Acme Payment Advice notification contract based on the assessment specification.
+
+The notification contract is separate from the synchronous payment response envelope and preserves the provider's original JSON field names through explicit serialization attributes.
+
+Implementation includes:
+
+- Dedicated Payment Advice notification DTO.
+- Required and optional field validation.
+- Provider-defined field length validation.
+- Merchant and transaction GUID validation for application-generated identifiers.
+- Integer minor-unit financial amount validation.
+- Default ZAR currency handling.
+- Supported notification request type validation.
+- Communication protocol validation.
+- Explicit SAST-to-UTC timestamp conversion.
+- Forward compatibility with unknown JSON fields.
+- Separation of structural validation from financial business rules.
+
+Payment outcome interpretation remains the responsibility of the notification processing layer. A structurally valid notification does not automatically represent an approved payment.
+
+Unit tests cover valid and invalid contracts, missing fields, malformed identifiers, currency validation, timezone conversion, unsupported request types and forward-compatible deserialization.
+
+Reversals and refunds will be handled separately through the Transaction Status webhook.
+
+No database schema changes were required during this stage.
+
+The notification endpoint will be introduced together with authentication and durable processing to prevent premature acknowledgement of financial notifications.
