@@ -1080,3 +1080,28 @@ Reversals and refunds will be handled separately through the Transaction Status 
 No database schema changes were required during this stage.
 
 The notification endpoint will be introduced together with authentication and durable processing to prevent premature acknowledgement of financial notifications.
+
+### Stage 4.3 — Payment Advice Notification Processing
+
+Implemented authenticated Acme Payment Advice notification processing using the existing Payments, PaymentEvents and AcmeNotifications tables.
+
+Notifications are matched to existing payments using the original Acme TransactionID. Merchant, amount, currency and payment references are validated before financial state changes are applied.
+
+A deterministic SHA256 fingerprint prevents repeated processing of equivalent notifications.
+
+Payment updates, lifecycle events and notification records are persisted within a single database transaction. Existing SQL Server row locking protects against concurrent notification processing.
+
+Late or conflicting Payment Advice notifications are recorded without overwriting an already resolved payment.
+
+Duplicate notifications receive HTTP 200 acknowledgement without generating additional financial events.
+
+#### Assessment Assumptions
+
+- Only Payment requests are submitted by this service.
+- Approved Payment Advice notifications are assumed to represent full authorisation.
+- Confirmed payment outcomes are not overwritten by subsequent conflicting Payment Advice notifications.
+- Reversal and refund transitions are handled separately through the Transaction Status webhook.
+- Unknown transactions and mismatched payment details are rejected and logged.
+- Notification processing is synchronous for simplicity.
+
+The implementation reuses the existing data model without introducing additional infrastructure or architectural layers.

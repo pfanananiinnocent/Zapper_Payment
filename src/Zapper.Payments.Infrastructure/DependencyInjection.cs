@@ -8,6 +8,7 @@ using Zapper.Payments.Infrastructure.Services;
 using Zapper.Payments.Application.Payments.Reconciliation;
 using Zapper.Payments.Infrastructure.BackgroundServices;
 using Zapper.Payments.Infrastructure.AcmePay.Resilience;
+using Zapper.Payments.Application.Notifications;
 
 namespace Zapper.Payments.Infrastructure;
 
@@ -81,6 +82,7 @@ public static class DependencyInjection
 
         //reconciliation service.
         services.AddScoped<IPaymentReconciliationService, PaymentReconciliationService>();
+        services.AddScoped<IPaymentAdviceService, PaymentAdviceService>();
 
         //background worker configuration.
         services.AddOptions<ReconciliationOptions>().Bind(configuration.GetSection(ReconciliationOptions.SectionName))
