@@ -1,4 +1,6 @@
 ﻿
+using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Zapper.Payments.Api.Authentication;
@@ -15,10 +17,22 @@ public sealed class AcmeNotificationsController
 {
     private readonly IPaymentAdviceService _paymentAdviceService;
 
+    private readonly ITransactionStatusService
+        _transactionStatusService;
+
+    private readonly IConfiguration _configuration;
+
     public AcmeNotificationsController(
-        IPaymentAdviceService paymentAdviceService)
+        IPaymentAdviceService paymentAdviceService,
+        ITransactionStatusService transactionStatusService,
+        IConfiguration configuration)
     {
         _paymentAdviceService = paymentAdviceService;
+
+        _transactionStatusService =
+            transactionStatusService;
+
+        _configuration = configuration;
     }
 
     [HttpPost("payment-advice")]
@@ -53,7 +67,71 @@ public sealed class AcmeNotificationsController
             });
         }
 
-        // Acme expects HTTP 200 acknowledgement.
+        return Ok();
+    }
+
+    [HttpPost("transaction-status")]
+    [AllowAnonymous]
+    [RequestSizeLimit(16384)]
+    public async Task<IActionResult> TransactionStatus(
+        CancellationToken cancellationToken)
+    {
+        // Read the exact request body bytes.
+
+        using var stream = new MemoryStream();
+
+        await Request.Body.CopyToAsync(
+            stream,
+            cancellationToken);
+
+        var body = stream.ToArray();
+
+        // Verify Acme's HMAC signature.
+
+        var signatures = Request.Headers["x-signature"];
+
+        if (signatures.Count != 1
+            || !AcmeWebhookSignatureValidator.IsValid(
+                body,
+                signatures[0],
+                _configuration["ACME_WEBHOOK_SECRET"]))
+        {
+            return Unauthorized();
+        }
+
+        // Deserialize only after successful verification.
+
+        AcmeTransactionStatusRequest? request;
+
+        try
+        {
+            request = JsonSerializer.Deserialize<
+                AcmeTransactionStatusRequest>(body);
+        }
+        catch (JsonException)
+        {
+            return BadRequest();
+        }
+
+        if (request is null)
+        {
+            return BadRequest();
+        }
+
+        var processed =
+            await _transactionStatusService.ProcessAsync(
+                request,
+                Encoding.UTF8.GetString(body),
+                cancellationToken);
+
+        if (!processed)
+        {
+            return BadRequest(new
+            {
+                message =
+                    "Transaction status could not be processed."
+            });
+        }
 
         return Ok();
     }

@@ -83,6 +83,7 @@ public static class DependencyInjection
         //reconciliation service.
         services.AddScoped<IPaymentReconciliationService, PaymentReconciliationService>();
         services.AddScoped<IPaymentAdviceService, PaymentAdviceService>();
+        services.AddScoped<ITransactionStatusService,TransactionStatusService>();
 
         //background worker configuration.
         services.AddOptions<ReconciliationOptions>().Bind(configuration.GetSection(ReconciliationOptions.SectionName))

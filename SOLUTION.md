@@ -1105,3 +1105,57 @@ Duplicate notifications receive HTTP 200 acknowledgement without generating addi
 - Notification processing is synchronous for simplicity.
 
 The implementation reuses the existing data model without introducing additional infrastructure or architectural layers.
+
+## Stage 4.4 — Transaction Status Webhooks, Reversals and Refunds
+
+### Implementation
+
+Implemented the Acme Transaction Status webhook according to Appendix A of the assessment specification.
+
+- Added the `/api/notifications/acme/transaction-status` endpoint.
+- Implemented HMAC-SHA256 signature validation against the original request body.
+- Externalised the webhook secret through `ACME_WEBHOOK_SECRET`.
+- Matched incoming notifications to original payments using the retrieval reference number.
+- Implemented full reversals, full refunds and cumulative partial refunds.
+- Reused the existing Payments, PaymentEvents and AcmeNotifications tables.
+- Prevented duplicate financial processing using the external event identifier and existing unique database indexes.
+- Persisted payment updates, notification records and financial events within a database transaction.
+- Prevented late Payment Advice notifications from overwriting reversed payment states.
+
+### Verification Results
+
+Manual end-to-end testing was performed using PowerShell, the local Acme simulator and SQL Server.
+
+| Scenario | Result |
+|---|---|
+| Successful reversal | Passed |
+| Duplicate reversal | Passed |
+| Full refund | Passed |
+| Partial refund | Passed |
+| Remaining balance refund | Passed |
+| Invalid HMAC signature | Passed |
+| Late approval after reversal | Passed |
+| Financial event verification | Passed |
+
+### Financial Verification
+
+- Approved payments: 4.
+- Total authorised amount: R650.
+- Reversal events: 1.
+- Total reversed amount: R100.
+- Refund events: 3.
+- Total refunded amount: R500.
+- Net payment value: R50.
+- Successfully processed reversal and refund notifications: 4.
+
+### Design Decisions and Trade-offs
+
+The implementation intentionally remains within the scope of the technical assessment.
+
+The original authorised amount is preserved for reporting purposes. Refund amounts accumulate independently and cannot exceed the authorised balance.
+
+Notifications received before the original payment outcome is resolved rely on Acme's retry mechanism. A durable deferred-notification worker has not been introduced, meaning notifications could remain unapplied if the provider exhausts its retries.
+
+Webhook deliveries were simulated using signed PowerShell requests. No external payment provider or AWS deployment was required.
+
+No additional database tables or migrations were necessary.
